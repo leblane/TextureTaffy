@@ -4,13 +4,14 @@ A utility to create compressed textures, in BC1 (DXT1), BC3 (DXT5), BC4, BC5, BC
 
 ## Requirements
 
+* C++ compiler supporting at least c++17. Tested on GCC, clang and MSVC 2022.
 * [The Meson build system](https://mesonbuild.com/)
 * [Intel® Implicit SPMD Program Compiler](https://ispc.github.io/)
 
 ## Building
 
 ```
-meson setup build [--buildtype=release]
+meson setup build [--buildtype=release] -Dcpp_std=c++17
 meson compile -C build
 ```
 
@@ -23,5 +24,5 @@ meson compile -C build
 but I haven't had a need for them yet. Pull requests welcome!
 * Based on my testing, the SSE4 code path is faster than AVX2 on modern AMD processors, but AVX2 is faster on intel.
 from what I've read, AMD implements AVX2 in slow microcode. ISPC doesn't allow easily selecting the instruction set at runtime,
-so I've added a little hack to detect AMD and use SSE4 in that case. Probably doesn't work on MSVC, that's likely to be the next thing I'll look at.
+so I've added a little hack to detect AMD and use SSE4 in that case.
 * Only supports x86/x64 processors. In theory ispc_texcomp has support for ARM NEON extensions for example, but I haven't had time to look at that.
