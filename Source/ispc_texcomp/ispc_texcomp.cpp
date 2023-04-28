@@ -20,6 +20,10 @@
 // IN THE SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 #include "ispc_texcomp.h"
 #include "kernel_ispc.h"
 #include <memory.h> // memcpy
