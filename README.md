@@ -1,6 +1,9 @@
 # TextureTaffy
 
 A utility to create compressed textures, in BC1 (DXT1), BC3 (DXT5), BC4, BC5, BC6(U)H and BC7 compression formats, with the [KTX File Format Version 2.0](https://registry.khronos.org/KTX/specs/2.0/ktxspec.v2.html) (KTX2) file format.
+Multithreaded, uses ispc_texcomp for compression, and stb_image for image loading.
+
+![Screenshot](screenshot.webp)
 
 ## Requirements
 
@@ -15,6 +18,21 @@ meson setup build [--buildtype=release] -Dcpp_std=c++17
 meson compile -C build
 ```
 
+## Usage
+
+```
+Usage: TextureTaffy [cube|array] <input> [input2, input3...] <output> <format> [fast|normal|slow|veryslow]
+Formats:
+  BC1 - (DXT1) 5:6:5 Color, 1 bit alpha. 8 bytes per block.
+  BC1_SRGB - (DXT1) 5:6:5 Color, 1 bit alpha. 8 bytes per block.
+  BC4 - Greyscale, 8 bytes per block.
+  BC5 - 2x BC4 images. 16 bytes per block.
+  BC3 - (DXT5) BC1 Color, BC4 Alpha, 16 bytes per block.
+  BC3_SRGB - (DXT5) BC1 Color, BC4 Alpha, 16 bytes per block.
+  BC6H - 16 bit RGB, no alpha. Signed. 16 bytes per block.
+  BC7 - 8 bit RGBA - Good general purpose. 16 bytes per block.
+  BC7_SRGB - 8 bit RGBA - Good general purpose. 16 bytes per block.
+```
 
 ## Notes and limitations
 * Uses stb_image for image loading. Therefore only supports radiance HDR images, not OpenEXR.

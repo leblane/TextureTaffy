@@ -41,14 +41,14 @@ const std::map<std::string, std::tuple<std::string, int, vk::Format>> formats = 
   {"BC7_SRGB", {"8 bit RGBA - Good general purpose. 16 bytes per block.", 16, vk::Format::eBc7SrgbBlock}}
 };
 
-const std::string usage = "Usage: TextureConverter [cube|array] <input> [input2, input3...] <output> <format> [fast|normal|slow|veryslow]";
+const std::string usage = "[cube|array] <input> [input2, input3...] <output> <format> [fast|normal|slow|veryslow]";
 
 int main(int argc, char ** argv)
 {
   ISPCInit();
 
   if (argc < 4) {
-    std::cout << usage << std::endl;
+    std::cout << "Usage: " << argv[0] << " " << usage << std::endl;
     std::cout << "Formats:" << std::endl;
     for (auto & formatName : formatOrder) {
       auto format = formats.at(formatName);
@@ -91,7 +91,7 @@ int main(int argc, char ** argv)
   }
 
   if (numInputs < 1) {
-    std::cout << usage << std::endl;
+    std::cout << "Usage: " << argv[0] << usage << " " << std::endl;
     return 1;
   }
 
