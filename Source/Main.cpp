@@ -41,7 +41,7 @@ const std::map<std::string, std::tuple<std::string, int, vk::Format>> formats = 
   {"BC7_SRGB", {"8 bit RGBA - Good general purpose. 16 bytes per block.", 16, vk::Format::eBc7SrgbBlock}}
 };
 
-const std::string usage = "Usage: TextureConverter [cube|array] <input> [input2, input3...] <output> <format> [fast|slow|veryslow]";
+const std::string usage = "Usage: TextureConverter [cube|array] <input> [input2, input3...] <output> <format> [fast|normal|slow|veryslow]";
 
 int main(int argc, char ** argv)
 {
@@ -69,19 +69,22 @@ int main(int argc, char ** argv)
     option = "none";
   }
 
-  std::string speed(argv[argc - 1]);
+  std::string speedString(argv[argc - 1]);
   std::string formatString;
-  bool fastMode = true;
-  bool verySlow = false;
-  if (speed == "fast" || speed == "slow" || speed == "veryslow") {
+  int speed = 2;
+
+  if (speedString == "fast" || speedString == "normal" || speedString == "slow" || speedString == "veryslow") {
     formatString = std::string(argv[argc - 2]);
     numInputs -= 1;
 
-    if (speed == "slow") {
-      fastMode = false;
-    } else if (speed == "veryslow") {
-      fastMode = false;
-      verySlow = true;
+    if (speedString == "slow") {
+      speed = 1;
+    } else if (speedString == "veryslow") {
+      speed = 0;
+    } else if (speedString == "fast") {
+      speed = 3;
+    } else {
+      speed = 2;
     }
   } else {
     formatString = std::string(argv[argc - 1]);
@@ -137,7 +140,7 @@ int main(int argc, char ** argv)
   }
   std::cout << "Output: " << output << std::endl;
   std::cout << "Format: " << formatString << std::endl;
-  std::cout << "Speed: " << (fastMode ? "Fast" : verySlow ? "Very slow" : "Slow") << std::endl;
+  std::cout << "Speed: " << speed << std::endl;
 
   int isa;
   isa = ISPCIsa();
@@ -280,27 +283,31 @@ int main(int argc, char ** argv)
   bc7_enc_settings bc7enc;
 
   if (formatString == "BC6H") {
-    if (fastMode) {
+    if (speed == 0) {
+      GetProfile_bc6h_veryslow(&bc6henc);
+    } else if (speed == 1) {
+      GetProfile_bc6h_slow(&bc6henc);
+    } else if (speed == 2) {
       GetProfile_bc6h_basic(&bc6henc);
-    } else {
-      if (verySlow) {
-        GetProfile_bc6h_veryslow(&bc6henc);
-      } else {
-        GetProfile_bc6h_slow(&bc6henc);
-      }
+    } else if (speed == 3) {
+      GetProfile_bc6h_fast(&bc6henc);
     }
   } else {
     if (channels == 3) {
-      if (fastMode) {
-        GetProfile_basic(&bc7enc);
-      } else {
+      if (speed == 0 || speed == 1) {
         GetProfile_slow(&bc7enc);
+      } else if (speed == 2) {
+        GetProfile_basic(&bc7enc);
+      } else if (speed == 3) {
+        GetProfile_fast(&bc7enc);
       }
     } else {
-      if (fastMode) {
-        GetProfile_alpha_basic(&bc7enc);
-      } else {
+      if (speed == 0 || speed == 1) {
         GetProfile_alpha_slow(&bc7enc);
+      } else if (speed == 2) {
+        GetProfile_alpha_basic(&bc7enc);
+      } else if (speed == 3) {
+        GetProfile_alpha_fast(&bc7enc);
       }
     }
   }
@@ -476,7 +483,7 @@ int main(int argc, char ** argv)
                 int barWidth = 70;
 
                 std::cout << std::setw(2) << l << " [";
-                int pos = barWidth * progress;
+                int pos = (int)(barWidth * progress);
                 for (int i = 0; i < barWidth; ++i) {
                     if (i < pos) std::cout << "=";
                     else if (i == pos) std::cout << ">";
