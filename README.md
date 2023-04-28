@@ -19,6 +19,8 @@ meson compile -C build
 ## Notes and limitations
 * Uses stb_image for image loading. Therefore only supports radiance HDR images, not OpenEXR.
 * KTX2 writer probably isn't the most robust, but it works for what I need in my pipeline.
+* ispc_texcomp doesn't appear to have seperate options for encoding linear BC1, BC3 and BC7 textures. The only difference is the method I use for scaling and the format header.
+Therefore the linear textures I output are probably very non-optimal. BC4/BC5/BC6 is probably best for linear data.
 * Tested with LDR and HDR single images and cubemaps. May work with 3D textures and arrays, but not tested.
 * Only supports BC1, BC3, BC4, BC5, BC6H and BC7 compression formats, ETC and ASTC are implemented by ispc_texcomp,
 but I haven't had a need for them yet. Pull requests welcome!
