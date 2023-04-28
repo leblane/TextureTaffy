@@ -22,6 +22,8 @@
 
 #if defined(_MSC_VER)
 #include <intrin.h>
+#else
+#include <cpuid.h>
 #endif
 
 #include "ispc_texcomp.h"
@@ -54,13 +56,8 @@ void ISPCInit()
 }
 #else
 {
-  unsigned int eax = 0x80000001;
-  unsigned int ebx = 0;
-  unsigned int ecx = 0;
-  unsigned int edx = 0;
-  asm volatile("cpuid"
-    : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-    : "a"(eax));
+  unsigned int eax, ebx, ecx, edx;
+  __get_cpuid(0x80000001, &eax, &ebx, &ecx, &edx);
   isAmd = (ecx & (1 << 6)) != 0;
 }
 #endif 
