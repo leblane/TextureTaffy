@@ -11,6 +11,7 @@ incdirs = include_directories([
 ])
 
 dependencies = [
+  dependency('threads'),
   dependency('vulkan')
 ]
 
