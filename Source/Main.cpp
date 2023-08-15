@@ -41,20 +41,20 @@ const std::map<std::string, std::tuple<std::string, int, vk::Format>> formats = 
   {"BC7_SRGB", {"8 bit RGBA - Good general purpose. 16 bytes per block.", 16, vk::Format::eBc7SrgbBlock}}
 };
 
-const std::string usage = "[cube|array] <input> [input2, input3...] <output> <format> [fast|normal|slow|veryslow]";
+const std::string usage = "[cube|array] <input> [input2, input3...] <output> <format> [fast|normal|slow|veryslow] [explicitmips]";
 
 int main(int argc, char ** argv)
 {
   ISPCInit();
 
   if (argc < 4) {
-    std::cout << "Usage: " << argv[0] << " " << usage << std::endl;
-    std::cout << "Formats:" << std::endl;
+    std::cerr << "Usage: " << argv[0] << " " << usage << std::endl;
+    std::cerr << "Formats:" << std::endl;
     for (auto & formatName : formatOrder) {
       auto format = formats.at(formatName);
-      std::cout << "  " << formatName << " - " << std::get<0>(format) << std::endl;
+      std::cerr << "  " << formatName << " - " << std::get<0>(format) << std::endl;
     }
-    return 1;
+    return -1;
   }
 
   int numInputs = argc - 3;
@@ -72,10 +72,19 @@ int main(int argc, char ** argv)
   std::string speedString(argv[argc - 1]);
   std::string formatString;
   int speed = 2;
+  bool explicitmips = false;
+
+  int formatPosition = -1;
+
+  if (speedString == "explicitmips") {
+    speedString = std::string(argv[argc - 2]);
+    numInputs -= 1;
+    explicitmips = true;
+  }
 
   if (speedString == "fast" || speedString == "normal" || speedString == "slow" || speedString == "veryslow") {
-    formatString = std::string(argv[argc - 2]);
     numInputs -= 1;
+    formatPosition -= 1;
 
     if (speedString == "slow") {
       speed = 1;
@@ -86,29 +95,34 @@ int main(int argc, char ** argv)
     } else {
       speed = 2;
     }
-  } else {
-    formatString = std::string(argv[argc - 1]);
   }
 
+  formatString = std::string(argv[argc + formatPosition]);
+
   if (numInputs < 1) {
-    std::cout << "Usage: " << argv[0] << usage << " " << std::endl;
-    return 1;
+    std::cerr << "Usage: " << argv[0] << usage << " " << std::endl;
+    return -1;
   }
 
   if (option == "cube" && numInputs != 6) {
-    std::cout << "Cube maps must have 6 inputs." << std::endl;
-    return 1;
+    std::cerr << "Cube maps must have 6 inputs." << std::endl;
+    return -1;
   }
 
   if (option == "array" && numInputs < 2) {
-    std::cout << "Array maps must have at least 2 inputs." << std::endl;
-    return 1;
+    std::cerr << "Array maps must have at least 2 inputs." << std::endl;
+    return -1;
+  }
+
+  if (option == "array" && explicitmips) {
+    std::cerr << "Explicit mips are not supported for arrays." << std::endl;
+    return -1;
   }
 
   if (formats.find(formatString) == formats.end()) {
-    std::cout << "Invalid format: " << formatString << std::endl;
-    std::cout << usage << std::endl;
-    std::cout << "Formats:" << std::endl;
+    std::cerr << "Invalid format: " << formatString << std::endl;
+    std::cerr << usage << std::endl;
+    std::cerr << "Formats:" << std::endl;
     for (auto & formatName : formatOrder) {
       auto format = formats.at(formatName);
       std::cout << "  " << formatName << " - " << std::get<0>(format) << std::endl;
@@ -190,92 +204,127 @@ int main(int argc, char ** argv)
 
   uint32_t levelCount;
 
-  for (int input = 0; input < numInputs; input++) {
-    int level = 0;
+  if (explicitmips) {
+    int levelWidth = 0, levelHeight = 0;
 
-    std::cout << "Loading/scaling " << input << ": " << inputs[input] << std::endl;
-
-    if (hdr) {
-      hdrBufferA = stbi_loadf(inputs[input].c_str(), &width, &height, &channels, forcedChannels);
-      if (hdrBufferA == nullptr) {
-        std::cout << "Failed to load image: " << inputs[input] << std::endl;
-        return 1;
-      }
-
-      hdrBufferB = new float[width * height * forcedChannels];
-      hdrBufferMain = hdrBufferA;
-      hdrBufferOther = hdrBufferB;
-    } else {
-      ldrBufferA = stbi_load(inputs[input].c_str(), &width, &height, &channels, forcedChannels);
-      if (ldrBufferA == nullptr) {
-        std::cout << "Failed to load image: " << inputs[input] << std::endl;
-        return 1;
-      }
-
-      ldrBufferB = new unsigned char[width * height * forcedChannels];
-      ldrBufferMain = ldrBufferA;
-      ldrBufferOther = ldrBufferB;
-    }
-
-    int oldWidth = width;
-    int oldHeight = height;
-
-    levelCount = 1;
-    {
-      int levelWidth = width;
-      int levelHeight = height;
-      while (levelWidth > 1 || levelHeight > 1) {
-        levelWidth = std::max(1, (int)floorf((float)levelWidth / 2));
-        levelHeight = std::max(1, (int)floorf((float)levelHeight / 2));
-        levelCount++;
-      }
-    }
-    
-    while(1) {
-      if (hdr) {
-        hdrLevels[input].push_back(std::vector<float>(hdrBufferMain, hdrBufferMain + oldWidth * oldHeight * forcedChannels));
-      } else {
-        ldrLevels[input].push_back(std::vector<uint8_t>(ldrBufferMain, ldrBufferMain + oldWidth * oldHeight * forcedChannels));
-      }
-
-      if (oldWidth == 1 && oldHeight == 1) {
-        break;
-      }
-
-      int newWidth = std::max(1, (int)floorf((float)oldWidth / 2));
-      int newHeight = std::max(1, (int)floorf((float)oldHeight / 2));
-
-      stbir_colorspace colorspace = srgb ? STBIR_COLORSPACE_SRGB : STBIR_COLORSPACE_LINEAR;
-      int alphaChannel = channels == 4 ? 3 : STBIR_ALPHA_CHANNEL_NONE;
+    for (int input = 0; input < numInputs; input++) {
+      std::cout << "Loading/scaling " << input << ": " << inputs[input] << std::endl;      
 
       if (hdr) {
-        int rv = stbir_resize_float_generic(hdrBufferMain, oldWidth, oldHeight, 0, hdrBufferOther, newWidth, newHeight, 0, forcedChannels, alphaChannel, 0, STBIR_EDGE_CLAMP, STBIR_FILTER_MITCHELL, colorspace, nullptr);
-        if (rv != 1) {
-          std::cerr << "Error resizing" << std::endl;
-        }
-        std::swap(hdrBufferMain, hdrBufferOther);
+        hdrBufferA = stbi_loadf(inputs[input].c_str(), &width, &height, &channels, forcedChannels);
       } else {
-        int rv = stbir_resize_uint8_generic(ldrBufferMain, oldWidth, oldHeight, 0, ldrBufferOther, newWidth, newHeight, 0, forcedChannels, alphaChannel, 0, STBIR_EDGE_CLAMP, STBIR_FILTER_MITCHELL, colorspace, nullptr);
-        if (rv != 1) {
-          std::cerr << "Error resizing" << std::endl;
-        }
-        std::swap(ldrBufferMain, ldrBufferOther);
+        ldrBufferA = stbi_load(inputs[input].c_str(), &width, &height, &channels, forcedChannels);
       }
 
-      oldWidth = newWidth;
-      oldHeight = newHeight;
-      level++;
-    }
+      if (input == 0) {
+        levelWidth = width;
+        levelHeight = height;
+      } else {
+        if (width != levelWidth || height != levelHeight) {
+          std::cout << "Input " << inputs[input] << " for level " << input << ", dimensions " << width << "x" << height << " do not match expected " << levelWidth << "x" << levelHeight << std::endl;
+          return -1;
+        }
+      }
 
-    oldWidth = width;
-    oldHeight = height;
-    level = 0;
-    if (hdr) {
-      free(hdrBufferA);
-       delete[] hdrBufferB;
-    } else {
-      free(ldrBufferA);
-      delete[] ldrBufferB;
+      if (hdr) {
+        hdrLevels[input].push_back(std::vector<float>(hdrBufferA, hdrBufferA + width * height * forcedChannels));
+        stbi_image_free(hdrBufferA);
+      } else {
+        ldrLevels[input].push_back(std::vector<uint8_t>(ldrBufferA, ldrBufferA + width * height * forcedChannels));
+        stbi_image_free(ldrBufferA);
+      }
+
+      levelWidth = std::max(1, (int)floorf((float)levelWidth / 2));
+      levelHeight = std::max(1, (int)floorf((float)levelHeight / 2));
+    }
+  } else {
+    for (int input = 0; input < numInputs; input++) {
+      int level = 0;
+
+      std::cout << "Loading/scaling " << input << ": " << inputs[input] << std::endl;
+
+      if (hdr) {
+        hdrBufferA = stbi_loadf(inputs[input].c_str(), &width, &height, &channels, forcedChannels);
+        if (hdrBufferA == nullptr) {
+          std::cout << "Failed to load image: " << inputs[input] << std::endl;
+          return 1;
+        }
+
+        hdrBufferB = new float[width * height * forcedChannels];
+        hdrBufferMain = hdrBufferA;
+        hdrBufferOther = hdrBufferB;
+      } else {
+        ldrBufferA = stbi_load(inputs[input].c_str(), &width, &height, &channels, forcedChannels);
+        if (ldrBufferA == nullptr) {
+          std::cout << "Failed to load image: " << inputs[input] << std::endl;
+          return 1;
+        }
+
+        ldrBufferB = new unsigned char[width * height * forcedChannels];
+        ldrBufferMain = ldrBufferA;
+        ldrBufferOther = ldrBufferB;
+      }
+
+      int oldWidth = width;
+      int oldHeight = height;
+
+      levelCount = 1;
+      {
+        int levelWidth = width;
+        int levelHeight = height;
+        while (levelWidth > 1 || levelHeight > 1) {
+          levelWidth = std::max(1, (int)floorf((float)levelWidth / 2));
+          levelHeight = std::max(1, (int)floorf((float)levelHeight / 2));
+          levelCount++;
+        }
+      }
+      
+      while(1) {
+        if (hdr) {
+          hdrLevels[input].push_back(std::vector<float>(hdrBufferMain, hdrBufferMain + oldWidth * oldHeight * forcedChannels));
+        } else {
+          ldrLevels[input].push_back(std::vector<uint8_t>(ldrBufferMain, ldrBufferMain + oldWidth * oldHeight * forcedChannels));
+        }
+
+        if (oldWidth == 1 && oldHeight == 1) {
+          break;
+        }
+
+        int newWidth = std::max(1, (int)floorf((float)oldWidth / 2));
+        int newHeight = std::max(1, (int)floorf((float)oldHeight / 2));
+
+        stbir_colorspace colorspace = srgb ? STBIR_COLORSPACE_SRGB : STBIR_COLORSPACE_LINEAR;
+        int alphaChannel = channels == 4 ? 3 : STBIR_ALPHA_CHANNEL_NONE;
+
+        if (hdr) {
+          int rv = stbir_resize_float_generic(hdrBufferMain, oldWidth, oldHeight, 0, hdrBufferOther, newWidth, newHeight, 0, forcedChannels, alphaChannel, 0, STBIR_EDGE_CLAMP, STBIR_FILTER_MITCHELL, colorspace, nullptr);
+          if (rv != 1) {
+            std::cerr << "Error resizing" << std::endl;
+          }
+          std::swap(hdrBufferMain, hdrBufferOther);
+        } else {
+          int rv = stbir_resize_uint8_generic(ldrBufferMain, oldWidth, oldHeight, 0, ldrBufferOther, newWidth, newHeight, 0, forcedChannels, alphaChannel, 0, STBIR_EDGE_CLAMP, STBIR_FILTER_MITCHELL, colorspace, nullptr);
+          if (rv != 1) {
+            std::cerr << "Error resizing" << std::endl;
+          }
+          std::swap(ldrBufferMain, ldrBufferOther);
+        }
+
+        oldWidth = newWidth;
+        oldHeight = newHeight;
+        level++;
+      }
+
+      oldWidth = width;
+      oldHeight = height;
+      level = 0;
+      if (hdr) {
+        free(hdrBufferA);
+        delete[] hdrBufferB;
+      } else {
+        free(ldrBufferA);
+        delete[] ldrBufferB;
+      }
     }
   }
 
@@ -400,7 +449,6 @@ int main(int argc, char ** argv)
       oldHeight = std::max(1, (int)floorf((float)oldHeight / 2));      
       level++;
     }
-
 
     /* Compress */
     levelBlocksCompressed[input].resize(levelCount);
