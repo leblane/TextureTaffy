@@ -79,6 +79,7 @@ int main(int argc, char ** argv)
   if (speedString == "explicitmips") {
     speedString = std::string(argv[argc - 2]);
     numInputs -= 1;
+    formatPosition -= 1;
     explicitmips = true;
   }
 
@@ -104,9 +105,16 @@ int main(int argc, char ** argv)
     return -1;
   }
 
-  if (option == "cube" && numInputs != 6) {
-    std::cerr << "Cube maps must have 6 inputs." << std::endl;
-    return -1;
+  if (explicitmips) {
+    if (option == "cube" && numInputs % 6 != 0) {
+      std::cerr << "Cube maps must have a multiple of 6 inputs." << std::endl;
+      return -1;
+    }
+  } else {
+    if (option == "cube" && numInputs != 6) {
+      std::cerr << "Cube maps must have 6 inputs." << std::endl;
+      return -1;
+    }
   }
 
   if (option == "array" && numInputs < 2) {
@@ -202,41 +210,57 @@ int main(int argc, char ** argv)
     ldrLevelBlocks.resize(numInputs);
   }
 
-  uint32_t levelCount;
+  unsigned int levelCount;
+  int numFaces = 1;
+
+  int topLevelWidth, topLevelHeight;
+
+  if (option == "cube") {
+    numFaces = 6;
+  }
 
   if (explicitmips) {
-    int levelWidth = 0, levelHeight = 0;
+    levelCount = numInputs / numFaces;
 
-    for (int input = 0; input < numInputs; input++) {
-      std::cout << "Loading/scaling " << input << ": " << inputs[input] << std::endl;      
+    for (int face = 0; face < numFaces; face++) {
+      int levelWidth = 0, levelHeight = 0;
 
-      if (hdr) {
-        hdrBufferA = stbi_loadf(inputs[input].c_str(), &width, &height, &channels, forcedChannels);
-      } else {
-        ldrBufferA = stbi_load(inputs[input].c_str(), &width, &height, &channels, forcedChannels);
-      }
+      for (unsigned int level = 0; level < levelCount; level++) {
+        std::cout << "Loading/scaling face " << face << ", level " << level << ", " << inputs[face * levelCount + level] << std::endl;      
 
-      if (input == 0) {
-        levelWidth = width;
-        levelHeight = height;
-      } else {
-        if (width != levelWidth || height != levelHeight) {
-          std::cout << "Input " << inputs[input] << " for level " << input << ", dimensions " << width << "x" << height << " do not match expected " << levelWidth << "x" << levelHeight << std::endl;
-          return -1;
+        if (hdr) {
+          hdrBufferA = stbi_loadf(inputs[face * levelCount + level].c_str(), &width, &height, &channels, forcedChannels);
+        } else {
+          ldrBufferA = stbi_load(inputs[face * levelCount + level].c_str(), &width, &height, &channels, forcedChannels);
         }
-      }
 
-      if (hdr) {
-        hdrLevels[input].push_back(std::vector<float>(hdrBufferA, hdrBufferA + width * height * forcedChannels));
-        stbi_image_free(hdrBufferA);
-      } else {
-        ldrLevels[input].push_back(std::vector<uint8_t>(ldrBufferA, ldrBufferA + width * height * forcedChannels));
-        stbi_image_free(ldrBufferA);
-      }
+        if (level == 0) {
+          levelWidth = width;
+          levelHeight = height;
+          topLevelWidth = width;
+          topLevelHeight = height;
+        } else {
+          if (width != levelWidth || height != levelHeight) {
+            std::cout << "Input " << inputs[face * levelCount + level] << " for face " << face << ", level " << level << "dimensions " << width << "x" << height << " do not match expected " << levelWidth << "x" << levelHeight << std::endl;
+            return -1;
+          }
+        }
 
-      levelWidth = std::max(1, (int)floorf((float)levelWidth / 2));
-      levelHeight = std::max(1, (int)floorf((float)levelHeight / 2));
+        if (hdr) {
+          hdrLevels[face].push_back(std::vector<float>(hdrBufferA, hdrBufferA + width * height * forcedChannels));
+          stbi_image_free(hdrBufferA);
+        } else {
+          ldrLevels[face].push_back(std::vector<uint8_t>(ldrBufferA, ldrBufferA + width * height * forcedChannels));
+          stbi_image_free(ldrBufferA);
+        }
+
+        levelWidth = std::max(1, (int)floorf((float)levelWidth / 2));
+        levelHeight = std::max(1, (int)floorf((float)levelHeight / 2));
+      }
     }
+
+    width = topLevelWidth;
+    height = topLevelHeight;
   } else {
     for (int input = 0; input < numInputs; input++) {
       int level = 0;
@@ -315,9 +339,6 @@ int main(int argc, char ** argv)
         level++;
       }
 
-      oldWidth = width;
-      oldHeight = height;
-      level = 0;
       if (hdr) {
         free(hdrBufferA);
         delete[] hdrBufferB;
@@ -365,19 +386,19 @@ int main(int argc, char ** argv)
   std::tuple<std::string, int, vk::Format> format = formats.find(formatString)->second;
   size_t blockSize = std::get<1>(format);
 
-  for (int input = 0; input < numInputs; input++) {
+  for (int face = 0; face < numFaces; face++) {
     if (numInputs > 1) {
       if (option == "cube") {
-        std::cout << "Face " << input << std::endl;
+        std::cout << "Face " << face << std::endl;
       } else {
-        std::cout << "Layer " << input << std::endl;
+        std::cout << "Layer " << face << std::endl;
       }
     }
 
     if (hdr) {
-      hdrLevelBlocks[input].resize(levelCount);
+      hdrLevelBlocks[face].resize(levelCount);
     } else {
-      ldrLevelBlocks[input].resize(levelCount);
+      ldrLevelBlocks[face].resize(levelCount);
     }
     int level = 0;
 
@@ -389,7 +410,7 @@ int main(int argc, char ** argv)
       unsigned int blocksHeight = (oldHeight + 3) / 4;
 
       if (hdr) {
-        hdrLevelBlocks[input][level].resize(blocksWidth * blocksHeight);
+        hdrLevelBlocks[face][level].resize(blocksWidth * blocksHeight);
 
         for (unsigned int y = 0; y < blocksHeight; y++) {
           for (unsigned int x = 0; x < blocksWidth; x++) {
@@ -401,7 +422,7 @@ int main(int argc, char ** argv)
                 unsigned int clampedX = std::min(pixelX, (unsigned int)oldWidth - 1);
 
                 for (int channel = 0; channel < copyChannels; channel++) {
-                  float value = hdrLevels[input][level][(clampedY * oldWidth + clampedX) * forcedChannels + channel];
+                  float value = hdrLevels[face][level][(clampedY * oldWidth + clampedX) * forcedChannels + channel];
                   if (value < 0.0f) {
                     value = 0.0f;
                   }
@@ -415,11 +436,11 @@ int main(int argc, char ** argv)
               }
             }
 
-            hdrLevelBlocks[input][level][blocksWidth * y + x] = block;
+            hdrLevelBlocks[face][level][blocksWidth * y + x] = block;
           }
         }
       } else {
-        ldrLevelBlocks[input][level].resize(blocksWidth * blocksHeight);
+        ldrLevelBlocks[face][level].resize(blocksWidth * blocksHeight);
 
         for (unsigned int y = 0; y < blocksHeight; y++) {
           for (unsigned int x = 0; x < blocksWidth; x++) {
@@ -431,12 +452,12 @@ int main(int argc, char ** argv)
                 unsigned int clampedX = std::min(pixelX, (unsigned int)oldWidth - 1);
 
                 for (int channel = 0; channel < copyChannels; channel++) {
-                  block[((pixelY % 4) * 4 + (pixelX % 4)) * copyChannels + channel] = ldrLevels[input][level][(clampedY * oldWidth + clampedX) * forcedChannels + channel];
+                  block[((pixelY % 4) * 4 + (pixelX % 4)) * copyChannels + channel] = ldrLevels[face][level][(clampedY * oldWidth + clampedX) * forcedChannels + channel];
                 }
               }
             }
 
-            ldrLevelBlocks[input][level][blocksWidth * y + x] = block;
+            ldrLevelBlocks[face][level][blocksWidth * y + x] = block;
           }
         }
       }
@@ -448,15 +469,19 @@ int main(int argc, char ** argv)
       oldWidth = std::max(1, (int)floorf((float)oldWidth / 2));
       oldHeight = std::max(1, (int)floorf((float)oldHeight / 2));      
       level++;
+
+      if (level >= levelCount) {
+        break;
+      }
     }
 
     /* Compress */
-    levelBlocksCompressed[input].resize(levelCount);
+    levelBlocksCompressed[face].resize(levelCount);
     for (unsigned int l = 0; l < levelCount; l++) {
       if (hdr) {
-        levelBlocksCompressed[input][l].resize(hdrLevelBlocks[input][l].size() * blockSize);
+        levelBlocksCompressed[face][l].resize(hdrLevelBlocks[face][l].size() * blockSize);
       } else {
-        levelBlocksCompressed[input][l].resize(ldrLevelBlocks[input][l].size() * blockSize);
+        levelBlocksCompressed[face][l].resize(ldrLevelBlocks[face][l].size() * blockSize);
       }
     }
 
@@ -471,49 +496,49 @@ int main(int argc, char ** argv)
         for (unsigned int l = 0; l < levelCount; l++) {
           unsigned int blocksPerThread;
           if (hdr) {
-            blocksPerThread = hdrLevelBlocks[input][l].size() / numThreads;
+            blocksPerThread = hdrLevelBlocks[face][l].size() / numThreads;
           } else {
-            blocksPerThread = ldrLevelBlocks[input][l].size() / numThreads;
+            blocksPerThread = ldrLevelBlocks[face][l].size() / numThreads;
           }
           unsigned int startBlock = t * blocksPerThread;
           unsigned int endBlock = startBlock + blocksPerThread;
 
           if (hdr) {
             if (t == numThreads - 1) {
-              endBlock = hdrLevelBlocks[input][l].size();
+              endBlock = hdrLevelBlocks[face][l].size();
             }
           } else {
             if (t == numThreads - 1) {
-              endBlock = ldrLevelBlocks[input][l].size();
+              endBlock = ldrLevelBlocks[face][l].size();
             }
           }
 
           for (unsigned int b = startBlock; b < endBlock; b++) {
             if (formatString == "BC6H") {
               rgba_surface surface;
-              surface.ptr = (uint8_t *)hdrLevelBlocks[input][l][b].data();
+              surface.ptr = (uint8_t *)hdrLevelBlocks[face][l][b].data();
               surface.width = 4;
               surface.height = 4;
               surface.stride = copyChannels * 4 * 2;
 
-              CompressBlocksBC6H(&surface, &levelBlocksCompressed[input][l][b * blockSize], &bc6henc);
+              CompressBlocksBC6H(&surface, &levelBlocksCompressed[face][l][b * blockSize], &bc6henc);
             } else {
               rgba_surface surface;
-              surface.ptr = ldrLevelBlocks[input][l][b].data();
+              surface.ptr = ldrLevelBlocks[face][l][b].data();
               surface.width = 4;
               surface.height = 4;
               surface.stride = copyChannels * 4;
 
               if (formatString == "BC1" || formatString == "BC1_SRGB") {
-                CompressBlocksBC1(&surface, &levelBlocksCompressed[input][l][b * blockSize]);
+                CompressBlocksBC1(&surface, &levelBlocksCompressed[face][l][b * blockSize]);
               } else if (formatString == "BC3" || formatString == "BC3_SRGB") {
-                CompressBlocksBC3(&surface, &levelBlocksCompressed[input][l][b * blockSize]);
+                CompressBlocksBC3(&surface, &levelBlocksCompressed[face][l][b * blockSize]);
               } else if (formatString == "BC4") {
-                CompressBlocksBC4(&surface, &levelBlocksCompressed[input][l][b * blockSize]);
+                CompressBlocksBC4(&surface, &levelBlocksCompressed[face][l][b * blockSize]);
               } else if (formatString == "BC5") {
-                CompressBlocksBC5(&surface, &levelBlocksCompressed[input][l][b * blockSize]);
+                CompressBlocksBC5(&surface, &levelBlocksCompressed[face][l][b * blockSize]);
               } else if (formatString == "BC7" || formatString == "BC7_SRGB") {
-                CompressBlocksBC7(&surface, &levelBlocksCompressed[input][l][b * blockSize], &bc7enc);
+                CompressBlocksBC7(&surface, &levelBlocksCompressed[face][l][b * blockSize], &bc7enc);
               }
             }
 
@@ -524,9 +549,9 @@ int main(int argc, char ** argv)
               if (l == maxLevel) {
                 float progress;
                 if (hdr) {
-                  progress = (float)completedBlocks[l] / hdrLevelBlocks[input][l].size();
+                  progress = (float)completedBlocks[l] / hdrLevelBlocks[face][l].size();
                 } else {
-                  progress = (float)completedBlocks[l] / ldrLevelBlocks[input][l].size();
+                  progress = (float)completedBlocks[l] / ldrLevelBlocks[face][l].size();
                 }
                 int barWidth = 70;
 
@@ -551,9 +576,9 @@ int main(int argc, char ** argv)
     }
 
     if (hdr) {
-      hdrLevelBlocks[input].clear();
+      hdrLevelBlocks[face].clear();
     } else {
-      ldrLevelBlocks[input].clear();
+      ldrLevelBlocks[face].clear();
     }
 
     int barWidth = 70;
@@ -660,13 +685,13 @@ int main(int argc, char ** argv)
     fh.seekp(levelOffsetBytePosition + (std::ofstream::pos_type)(level * 24));
     uint64_t byteOffset = levelBytePosition;
     fh.write((char *)&byteOffset, sizeof(byteOffset));
-    uint64_t byteLength = levelBlocksCompressed[0][level].size() * numInputs;
+    uint64_t byteLength = levelBlocksCompressed[0][level].size() * faceCount;
     fh.write((char *)&byteLength, sizeof(byteLength));
     fh.write((char *)&byteLength, sizeof(byteLength));
     fh.seekp(levelBytePosition);
 
-    for (int input = 0; input < numInputs; input++) {
-      fh.write((char *)levelBlocksCompressed[input][level].data(), levelBlocksCompressed[input][level].size());
+    for (int face = 0; face < faceCount; face++) {
+      fh.write((char *)levelBlocksCompressed[face][level].data(), levelBlocksCompressed[face][level].size());
     }
   }
 
